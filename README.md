@@ -9,6 +9,10 @@ The math heavy lifting is all contained within `numpy`.
 * Multiple plot views including: Time Series (IQ), PSD, Spectrogram
 * File seek
 
+## Usage
+From the command line just run:
+`grplot`
+
 ## Installation
 
 * For development: `pip install -e .`
@@ -21,3 +25,5 @@ To help keep the quality up, please make sure all tests and linters pass:
 * pycodestyle [formerly pep8]
 
 Also try and use python types whenever possible.  Because this code still needs to support python2, please use use the comment style for now.
+
+The project is setup to support pipenv to make setting the project up easier.
