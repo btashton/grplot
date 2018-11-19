@@ -1,0 +1,3 @@
+[MASTER]
+# pylint is not able to pick up the modules under QtWidgets
+extension-pkg-whitelist=PyQt5
