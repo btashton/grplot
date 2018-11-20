@@ -19,7 +19,7 @@ from PyQt5.QtGui import (
 )
 from PyQt5.QtWidgets import (
     QMainWindow, QApplication, QPushButton, QWidget, QTabWidget, QVBoxLayout,
-    QLineEdit, QListWidget, QGridLayout, qApp, QAction,
+    QLineEdit, QListWidget, QGridLayout, qApp, QAction, QFileDialog,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,6 +57,10 @@ class MainWindow(QMainWindow):
         self._w.setLayout(layout)
         self.setCentralWidget(self._w)
 
+        self._data_source = DataSource()
+        # We have not loaded a file yet, so let the file pick the data range
+        self._first_file = True
+
         self.show()
 
     def _setup_actions(self):
@@ -66,11 +70,23 @@ class MainWindow(QMainWindow):
         self._exit_action.setStatusTip('Exit application')
         self._exit_action.triggered.connect(qApp.quit)
 
+        self._open_action = QAction('&Open', self)
+        self._open_action.setShortcut('Ctrl+O')
+        self._open_action.setStatusTip('Open data file')
+        self._open_action.triggered.connect(self._open_file)
+
     def _add_menu(self):
         # type: () -> None
         self._menu_bar = self.menuBar()
         file_menu = self._menu_bar.addMenu('&File')
         file_menu.addAction(self._exit_action)
+        file_menu.addAction(self._open_action)
+
+    def _open_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, 'Open File', os.getenv('HOME')
+        )
+        self._data_source.load_file(file_path, self._first_file)
 
 
 class PlottingeWidget(QWidget):
