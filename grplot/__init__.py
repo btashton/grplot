@@ -86,7 +86,9 @@ class MainWindow(QMainWindow):
         file_path, _ = QFileDialog.getOpenFileName(
             self, 'Open File', os.getenv('HOME')
         )
+        # Should throw some kind of warning message at this point
         self._data_source.load_file(file_path, self._first_file)
+        self.plot_widget.refresh_plot(self._data_source)
 
 
 class PlottingeWidget(QWidget):
@@ -103,19 +105,32 @@ class PlottingeWidget(QWidget):
         # Initialize tab screen
         tabs = QTabWidget()
 
-        plot_time = pg.PlotWidget()
-        plot_psd = pg.PlotWidget()
-        plot_spec = pg.PlotWidget()
+        self.plot_time = pg.PlotWidget()
+        self.plot_curves = {
+            'real': self.plot_time.plot(),
+            'imag': self.plot_time.plot()
+        }
 
-        tabs.addTab(plot_time, "Time (iq)")
-        tabs.addTab(plot_psd, "PSD")
-        tabs.addTab(plot_spec, "Spectrogram")
+        self.plot_psd = pg.PlotWidget()
+        self.plot_spec = pg.PlotWidget()
+
+        tabs.addTab(self.plot_time, "Time (iq)")
+        tabs.addTab(self.plot_psd, "PSD")
+        tabs.addTab(self.plot_spec, "Spectrogram")
 
         # Add tabs to widget
         layout.addWidget(tabs)
         self.setLayout(layout)
 
-        self.data_path = None   # type: Optional[str]
+    def refresh_plot(self, data_source):
+        # type: (DataSource) -> None
+        # Need to look up the correct tab here for now just plot timeseries
+        self._refresh_time_plot(data_source)
+
+    def _refresh_time_plot(self, data):
+        # type: (DataSource) -> None
+        self.plot_curves['real'].setData(data.time, data.data.real)
+        self.plot_curves['imag'].setData(data.time, data.data.imag)
 
 
 class DataSource(object):
@@ -127,6 +142,7 @@ class DataSource(object):
         self.data = numpy.array([], dtype=numpy.complex64)
         self._start = 0  # type: int
         self._end = 0  # type: int
+        self.sample_rate = 1.0  # type: float
         if path is not None:
             self.load_file(path, True)
 
@@ -229,6 +245,12 @@ class DataSource(object):
         except Exception:
             self._end = old_end
             raise
+
+    @property
+    def time(self):
+        time_range = numpy.linspace(self.start, self.end, len(self.data), True)
+        time_range *= self.sample_rate
+        return time_range
 
 
 def main():
