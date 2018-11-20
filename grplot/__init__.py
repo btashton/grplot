@@ -4,15 +4,14 @@ Provides a QT application for plotting gnuradio data.
 Example:
     $ python -m grplot
 """
+from typing import Optional
 import sys
 
-import pyqtgraph as pg
-
+import pyqtgraph as pg  # type: ignore
 from PyQt5 import QtGui
 from PyQt5.QtGui import (
     QIcon,
 )
-
 from PyQt5.QtWidgets import (
     QMainWindow, QApplication, QPushButton, QWidget, QTabWidget, QVBoxLayout,
     QLineEdit, QListWidget, QGridLayout, qApp, QAction,
@@ -23,6 +22,7 @@ class MainWindow(QMainWindow):
     """Main window that contains the plot widget as well as the setting"""
 
     def __init__(self):
+        # type: () -> None
         super().__init__()
         self.setWindowTitle('GNURadio Plotting Utility')
         self.setGeometry(0, 0, 1000, 500)
@@ -53,12 +53,14 @@ class MainWindow(QMainWindow):
         self.show()
 
     def _setup_actions(self):
+        # type: () -> None
         self._exit_action = QAction('&Exit', self)
         self._exit_action.setShortcut('Ctrl+Q')
         self._exit_action.setStatusTip('Exit application')
         self._exit_action.triggered.connect(qApp.quit)
 
     def _add_menu(self):
+        # type: () -> None
         self._menu_bar = self.menuBar()
         file_menu = self._menu_bar.addMenu('&File')
         file_menu.addAction(self._exit_action)
@@ -70,6 +72,8 @@ class PlottingeWidget(QWidget):
     the data that is being shown"""
 
     def __init__(self, parent):
+        # type: (QWidget) -> None
+
         super().__init__(parent)
         layout = QVBoxLayout(self)
 
@@ -88,8 +92,11 @@ class PlottingeWidget(QWidget):
         layout.addWidget(tabs)
         self.setLayout(layout)
 
+        self.data_path = None   # type: Optional[str]
+
 
 def main():
+    # type: () -> None
     """Main console entry point"""
     app = QApplication(sys.argv)
 

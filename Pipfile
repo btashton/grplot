@@ -6,6 +6,8 @@ name = "pypi"
 [packages]
 pylint = "*"
 pycodestyle = "*"
+mypy = "*"
+"pyqt5-stubs" = "*"
 
 [dev-packages]
 grplot = {editable = true, path = "."}
