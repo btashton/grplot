@@ -9,6 +9,7 @@ pycodestyle = "*"
 mypy = "*"
 "pyqt5-stubs" = "*"
 pytest = "*"
+grplot = {editable = true, path = "."}
 
 [dev-packages]
 grplot = {editable = true, path = "."}

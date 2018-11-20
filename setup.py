@@ -1,5 +1,5 @@
 """
-Flask-InfluxDB
+grplot
 """
 from setuptools import setup
 
@@ -19,6 +19,8 @@ setup(
     include_package_data=True,
     platforms='any',
     install_requires=[
+        'numpy>=1.12.0',
+        'scipy>=1.0.0',
         'pyqtgraph>=0.10.0',
         'PyQt5>=5.10',
     ],
