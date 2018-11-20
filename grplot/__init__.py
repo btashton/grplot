@@ -13,6 +13,7 @@ import logging
 
 import pyqtgraph as pg  # type: ignore
 import numpy  # type: ignore
+from scipy import signal  # type: ignore
 from PyQt5 import QtGui
 from PyQt5.QtGui import (
     QIcon,
@@ -106,13 +107,20 @@ class PlottingeWidget(QWidget):
         tabs = QTabWidget()
 
         self.plot_time = pg.PlotWidget()
-        self.plot_curves = {
-            'real': self.plot_time.plot(),
-            'imag': self.plot_time.plot()
-        }
-
         self.plot_psd = pg.PlotWidget()
         self.plot_spec = pg.PlotWidget()
+        spec_image = pg.ImageItem()
+        self.plot_spec.addItem(spec_image)
+
+        # gl = pg.GradientLegend((10, 200), (10, 30))
+        # self.plot_spec.addItem(gl)
+
+        self.plot_curves = {
+            'real': self.plot_time.plot(),
+            'imag': self.plot_time.plot(),
+            'psd': self.plot_psd.plot(),
+            'spec': spec_image,
+        }
 
         tabs.addTab(self.plot_time, "Time (iq)")
         tabs.addTab(self.plot_psd, "PSD")
@@ -122,15 +130,61 @@ class PlottingeWidget(QWidget):
         layout.addWidget(tabs)
         self.setLayout(layout)
 
+        self.fftsize = 256
+
     def refresh_plot(self, data_source):
         # type: (DataSource) -> None
         # Need to look up the correct tab here for now just plot timeseries
         self._refresh_time_plot(data_source)
+        self._refresh_psd_plot(data_source)
+        self._refresh_spec_plot(data_source)
 
     def _refresh_time_plot(self, data):
         # type: (DataSource) -> None
         self.plot_curves['real'].setData(data.time, data.data.real)
         self.plot_curves['imag'].setData(data.time, data.data.imag)
+
+    def _refresh_psd_plot(self, data):
+        # Hard code the window function for now
+        window = numpy.blackman(self.fftsize)
+        freq_segments, power_d = signal.welch(
+            data.data,
+            fs=data.sample_rate,
+            window=window,
+            nfft=self.fftsize,
+            noverlap=self.fftsize/4.0,
+            scaling='density',
+            return_onesided=False,  # Complex only right now so must be False
+        )
+        power_d_log = 10.0*numpy.log10(abs(power_d))
+        self.plot_curves['psd'].setData(freq_segments, power_d_log)
+
+    def _refresh_spec_plot(self, data):
+        # Hard code the window function for now
+        window = numpy.blackman(self.fftsize)
+        freq_segments, time_segments, spec = signal.spectrogram(
+            data.data,
+            fs=data.sample_rate,
+            window=window,
+            nfft=self.fftsize,
+            noverlap=self.fftsize/4.0,
+            # Should we use density? matplotlib was using spectrum scaling
+            scaling='spectrum',
+            return_onesided=False,  # Complex only right now so must be False
+        )
+        spec = 10.0*numpy.log10(abs(spec))
+
+        freq_segments = numpy.fft.fftshift(freq_segments)
+        spec = numpy.fft.fftshift(spec, axes=0)
+        self.plot_curves['spec'].setImage(spec, autoLevels=True, autoRange=True)
+
+        f_scale = (freq_segments[-1] - freq_segments[0]) / len(freq_segments)
+        t_scale = (time_segments[-1] - time_segments[0]) / len(time_segments)
+
+        pos = (freq_segments[0], time_segments[0])
+
+        self.plot_curves['spec'].translate(*pos)
+        self.plot_curves['spec'].scale(f_scale, t_scale)
 
 
 class DataSource(object):
@@ -142,7 +196,7 @@ class DataSource(object):
         self.data = numpy.array([], dtype=numpy.complex64)
         self._start = 0  # type: int
         self._end = 0  # type: int
-        self.sample_rate = 1.0  # type: float
+        self.sample_rate = 8000.0  # type: float
         if path is not None:
             self.load_file(path, True)
 

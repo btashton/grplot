@@ -116,3 +116,7 @@ dmypy.json
 
 # VSCode stuff
 .vscode/
+
+# Generated test data
+testdata/
+
