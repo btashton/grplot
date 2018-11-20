@@ -105,12 +105,14 @@ class PlottingeWidget(QWidget):
 class DataSource(object):
     """Data interface class for plotting"""
 
-    def __init__(self):
+    def __init__(self, path=None):
         self._data_type = numpy.complex64
         self._source_path = None  # type: Optional[str]
         self.data = numpy.array([], dtype=numpy.complex64)
         self._start = 0  # type: int
         self._end = 0  # type: int
+        if path is not None:
+            self.load_file(path, True)
 
     def _file_range(self, file_len, full_scale=False):
         # type: (int, bool) -> Tuple[int, int]
@@ -155,8 +157,7 @@ class DataSource(object):
 
             new_start, new_end = self._file_range(file_len, reset)
 
-            limits_changed = (new_start, new_end) == (self._start, self._end)
-            print(new_start, new_end)
+            limits_changed = (new_start, new_end) != (self._start, self._end)
             if limits_changed and not reset:
                 # Only log if limits changed unexpectedly
                 logger.warning(
@@ -166,7 +167,7 @@ class DataSource(object):
 
             data_size = numpy.dtype(self._data_type).itemsize
             fp.seek(new_start*data_size)
-            self._data = numpy.fromfile(fp, self._data_type, new_end-new_start)
+            self.data = numpy.fromfile(fp, self._data_type, new_end-new_start)
 
             # The data was loaded apply the state
             self._start = new_start
