@@ -1,3 +1,5 @@
 [MASTER]
 # pylint is not able to pick up the modules under QtWidgets
 extension-pkg-whitelist=PyQt5
+good-names=logger
+disable=R0205

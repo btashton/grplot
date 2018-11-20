@@ -55,7 +55,7 @@ def test_range_limit_properties(size_100_file):
     ds.load_file(size_100_file[1])
     assert ds.start == 10
     assert ds.end == 20
-    
+
     ds.start = 15
     assert ds.start == 15
 

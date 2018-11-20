@@ -152,8 +152,8 @@ class DataSource(object):
     def load_file(self, path, reset=False):
         # type: (str, bool) -> None
         """Update the source data file return if the ui needs to be updated"""
-        with open(path, 'rb') as fp:
-            file_len = os.fstat(fp.fileno()).st_size  # type: int
+        with open(path, 'rb') as data_file:
+            file_len = os.fstat(data_file.fileno()).st_size  # type: int
 
             new_start, new_end = self._file_range(file_len, reset)
 
@@ -166,8 +166,10 @@ class DataSource(object):
                 )
 
             data_size = numpy.dtype(self._data_type).itemsize
-            fp.seek(new_start*data_size)
-            self.data = numpy.fromfile(fp, self._data_type, new_end-new_start)
+            data_file.seek(new_start*data_size)
+            self.data = numpy.fromfile(
+                data_file, self._data_type, new_end-new_start
+            )
 
             # The data was loaded apply the state
             self._start = new_start
