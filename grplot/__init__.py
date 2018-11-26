@@ -4,9 +4,14 @@ Provides a QT application for plotting gnuradio data.
 Example:
     $ python -m grplot
 """
-from typing import (
-    Optional, Tuple,
-)
+try:
+    from typing import (
+        Optional, Tuple,
+    )
+except ImportError:
+    # Typing is needed for mypy on python2
+    pass
+
 import sys
 import os
 import logging
@@ -19,7 +24,7 @@ from PyQt5.QtGui import (
     QIcon,
 )
 from PyQt5.QtWidgets import (
-    QMainWindow, QApplication, QPushButton, QWidget, QTabWidget, QVBoxLayout,
+    QMainWindow, QApplication, QLabel, QWidget, QTabWidget, QVBoxLayout,
     QLineEdit, QListWidget, QGridLayout, qApp, QAction, QFileDialog,
 )
 
@@ -39,18 +44,17 @@ class MainWindow(QMainWindow):
         self._add_menu()
 
         # Temporary config widgets
-        btn = QPushButton('press me')
-        text = QLineEdit('enter text')
-        list_widget = QListWidget()
+
+        lbl = QLabel('Sample Rate \n(does not work)')
+        text = QLineEdit('8000')
 
         # The tabs for the plots
         self.plot_widget = PlottingeWidget(self)
 
         # The grid we are working with is 3 rows 2 columns
         layout = QGridLayout()
-        layout.addWidget(btn, 0, 0)
+        layout.addWidget(lbl, 0, 0)
         layout.addWidget(text, 1, 0)
-        layout.addWidget(list_widget, 2, 0)
         layout.addWidget(self.plot_widget, 0, 1, 3, 2)
         layout.setColumnStretch(1, 1)
 
@@ -107,20 +111,39 @@ class PlottingeWidget(QWidget):
         tabs = QTabWidget()
 
         self.plot_time = pg.PlotWidget()
+        self.plot_time.addLegend()
         self.plot_psd = pg.PlotWidget()
         self.plot_spec = pg.PlotWidget()
         spec_image = pg.ImageItem()
         self.plot_spec.addItem(spec_image)
 
-        # gl = pg.GradientLegend((10, 200), (10, 30))
-        # self.plot_spec.addItem(gl)
-
         self.plot_curves = {
-            'real': self.plot_time.plot(),
-            'imag': self.plot_time.plot(),
-            'psd': self.plot_psd.plot(),
+            'real': self.plot_time.plot(pen='b', name='I'),
+            'imag': self.plot_time.plot(pen='r', name='Q'),
+            'psd': self.plot_psd.plot(pen='b'),
             'spec': spec_image,
         }
+
+        for _, plot in self.plot_curves.items():
+            # Default to using the mouse for selecting region instead of pan
+            # this can be change by the user by right clicking and selecting
+            # the menu item
+            plot.getViewBox().setMouseMode(pg.ViewBox.RectMode)
+
+        self.plot_time.getAxis('bottom').setLabel('Time', units='s')
+        self.plot_time.getAxis('bottom').enableAutoSIPrefix(False)
+        # This is not rendering correctly
+        self.plot_time.getAxis('left').setLabel('Amplitude', unit='V')
+
+        self.plot_psd.getAxis('bottom').setLabel('Frequency', units='Hz')
+        self.plot_psd.getAxis('left').setLabel('Magnitude', units='dB')
+
+        self.plot_spec.getAxis('bottom').setLabel('Frequency', units='Hz')
+        # The auto prefix is messed up on this kind of plot, might have
+        # to do with the scaling factors that are applied
+        self.plot_spec.getAxis('bottom').enableAutoSIPrefix(False)
+        self.plot_spec.getAxis('left').setLabel('Time', units='s')
+        self.plot_spec.getAxis('left').enableAutoSIPrefix(False)
 
         tabs.addTab(self.plot_time, "Time (iq)")
         tabs.addTab(self.plot_psd, "PSD")
