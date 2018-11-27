@@ -25,10 +25,67 @@ from PyQt5.QtGui import (
 )
 from PyQt5.QtWidgets import (
     QMainWindow, QApplication, QLabel, QWidget, QTabWidget, QVBoxLayout,
-    QLineEdit, QListWidget, QGridLayout, qApp, QAction, QFileDialog,
+    QLineEdit, QComboBox, QGridLayout, QFormLayout, qApp, QAction,
+    QFileDialog, QGroupBox, QSpinBox,
 )
 
 logger = logging.getLogger(__name__)
+
+
+# These window functions come from `scipy.signal.windows`.  Some are excluded
+# because they require additional parameters.  Perhaps these could be supported
+# by extending the window function UI to take in the required parameters
+_WINDOW_FUNCTIONS = [
+    'boxcar', 'triang', 'blackman', 'hamming', 'hann', 'bartlett',
+    'flattop', 'parzen', 'bohman', 'blackmanharris', 'nuttall',
+    'barthann',
+]
+
+
+class PlotSettingsWidget(QWidget):
+    def __init__(self):
+        QWidget.__init__(self)
+
+        file_info = QGroupBox('File Info:')
+        file_layout = QFormLayout()
+        file_info.setLayout(file_layout)
+        file_name = QLabel('No File')
+        file_length = QLabel('Unknown')
+        file_duration = QLabel('Unknown')
+        file_data_type = QComboBox()
+
+        # This list could be extended further, or maybe read from numpy
+        # custom ones could be created via `numpy.dtype`
+        file_data_type.addItems([
+            'complex64', 'complex128',
+            'float32', 'float64',
+            'int8', 'int16', 'int32', 'int64',
+            'uint8', 'uint16', 'uint32', 'uint64',
+        ])
+        file_sr_widget = QSpinBox()
+        file_sr_widget.setMinimum(0.0)
+        file_sr_widget.setValue(8000)
+        file_layout.addRow(QLabel('File Name'), file_name)
+        file_layout.addRow(QLabel('File Length'), file_length)
+        file_layout.addRow(QLabel('File Duration'), file_duration)
+        file_layout.addRow(QLabel('Data Type'), file_data_type)
+        file_layout.addRow(QLabel('Sample Rate'), file_sr_widget)
+
+        fft_settings = QGroupBox('FFT:')
+        fft_layout = QFormLayout()
+        fft_size_widget = QComboBox()
+        fft_size_widget.addItems([str(pow(2, exp)) for exp in range(7, 14)])
+        fft_window_widget = QComboBox()
+        fft_window_widget.addItems(_WINDOW_FUNCTIONS)
+        fft_layout.addRow(QLabel('Window Function'), fft_window_widget)
+        fft_layout.addRow(QLabel('Size'), fft_size_widget)
+        fft_settings.setLayout(fft_layout)
+
+        settings_layout = QVBoxLayout()
+        settings_layout.addWidget(file_info)
+        settings_layout.addWidget(fft_settings)
+
+        self.setLayout(settings_layout)
 
 
 class MainWindow(QMainWindow):
@@ -43,20 +100,17 @@ class MainWindow(QMainWindow):
         self.statusBar()
         self._add_menu()
 
-        # Temporary config widgets
-
-        lbl = QLabel('Sample Rate \n(does not work)')
-        text = QLineEdit('8000')
-
         # The tabs for the plots
         self.plot_widget = PlottingeWidget(self)
 
-        # The grid we are working with is 3 rows 2 columns
+        self.settings_widget = PlotSettingsWidget()
+
         layout = QGridLayout()
-        layout.addWidget(lbl, 0, 0)
-        layout.addWidget(text, 1, 0)
-        layout.addWidget(self.plot_widget, 0, 1, 3, 2)
-        layout.setColumnStretch(1, 1)
+        layout.addWidget(self.plot_widget, 0, 0, 1, 1)
+        layout.setColumnStretch(0, 1)
+        layout.addWidget(self.settings_widget, 0, 1)
+        layout.setColumnMinimumWidth(0, 600)
+        layout.setColumnMinimumWidth(1, 500)
 
         self._w = QWidget()
         self._w.setLayout(layout)
@@ -199,7 +253,7 @@ class PlottingeWidget(QWidget):
 
         freq_segments = numpy.fft.fftshift(freq_segments)
         spec = numpy.fft.fftshift(spec, axes=0)
-        self.plot_curves['spec'].setImage(spec, autoLevels=True, autoRange=True)
+        self.plot_curves['spec'].setImage(spec)
 
         f_scale = (freq_segments[-1] - freq_segments[0]) / len(freq_segments)
         t_scale = (time_segments[-1] - time_segments[0]) / len(time_segments)
