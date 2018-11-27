@@ -43,40 +43,52 @@ _WINDOW_FUNCTIONS = [
 
 
 class PlotSettingsWidget(QWidget):
-    def __init__(self):
+    def __init__(self, plot_widget):
         QWidget.__init__(self)
+
+        # Cached values for calculating values
+        self._samples = None
+        self._sample_rate = 8000
+        self._data_type = None
+        self._data_source = None
 
         file_info = QGroupBox('File Info:')
         file_layout = QFormLayout()
         file_info.setLayout(file_layout)
-        file_name = QLabel('No File')
-        file_length = QLabel('Unknown')
-        file_duration = QLabel('Unknown')
-        file_data_type = QComboBox()
+        self.file_name = QLabel('No File')
+        self.file_length = QLabel('Unknown')
+        self.file_duration = QLabel('Unknown')
+        self.file_data_type = QComboBox()
 
         # This list could be extended further, or maybe read from numpy
         # custom ones could be created via `numpy.dtype`
-        file_data_type.addItems([
+        self.file_data_type.addItems([
             'complex64', 'complex128',
             'float32', 'float64',
             'int8', 'int16', 'int32', 'int64',
             'uint8', 'uint16', 'uint32', 'uint64',
         ])
-        file_sr_widget = QSpinBox()
-        file_sr_widget.setMinimum(0.0)
-        file_sr_widget.setValue(8000)
-        file_layout.addRow(QLabel('File Name'), file_name)
-        file_layout.addRow(QLabel('File Length'), file_length)
-        file_layout.addRow(QLabel('File Duration'), file_duration)
-        file_layout.addRow(QLabel('Data Type'), file_data_type)
-        file_layout.addRow(QLabel('Sample Rate'), file_sr_widget)
+        self._data_type = self.file_data_type.currentText()
+        self.file_data_type.currentIndexChanged.connect(self._data_type_changed)
+        self.file_sr_widget = QSpinBox()
+        self.file_sr_widget.setMinimum(0.0)
+        self.file_sr_widget.setMaximum(1000000)  # Need to do something better
+        self.file_sr_widget.setValue(self.sample_rate)
+        self.file_sr_widget.valueChanged.connect(self._sample_rate_changed)
+        file_layout.addRow(QLabel('File Name'), self.file_name)
+        file_layout.addRow(QLabel('File Length'), self.file_length)
+        file_layout.addRow(QLabel('File Duration'), self.file_duration)
+        file_layout.addRow(QLabel('Data Type'), self.file_data_type)
+        file_layout.addRow(QLabel('Sample Rate'), self.file_sr_widget)
 
         fft_settings = QGroupBox('FFT:')
         fft_layout = QFormLayout()
         fft_size_widget = QComboBox()
         fft_size_widget.addItems([str(pow(2, exp)) for exp in range(7, 14)])
+        fft_size_widget.currentIndexChanged.connect(self._fft_change)
         fft_window_widget = QComboBox()
         fft_window_widget.addItems(_WINDOW_FUNCTIONS)
+        fft_window_widget.currentIndexChanged.connect(self._fft_change)
         fft_layout.addRow(QLabel('Window Function'), fft_window_widget)
         fft_layout.addRow(QLabel('Size'), fft_size_widget)
         fft_settings.setLayout(fft_layout)
@@ -86,7 +98,61 @@ class PlotSettingsWidget(QWidget):
         settings_layout.addWidget(fft_settings)
 
         self.setLayout(settings_layout)
+    
+    def _sample_rate_changed(self):
+        # This is the callback from the widget changing values
+        # do not use the sample rate property since it updates the widget
+        self._sample_rate = self.file_sr_widget.value()
+        if self._data_source is not None:
+            self._data_source.sample_rate = self._sample_rate
+        self.source_update()
+    
+    def _data_type_changed(self):
+        logger.warning('Data type change not implemented, using complex64')
+    
+    def _fft_change(self):
+        logger.warning('FFT Settings not implemented')
 
+    def source_update(self, data_source=None):
+        # type: (Optionial[DataSource]) -> None
+        if data_source is not None:
+            self._data_source = data_source
+            if self._data_source.source_path == None:
+                self.file_name.setText('Unknown')
+                self.file_length.setText('Unknown')
+                self.file_duration.setText('Unknown')
+                return
+            else:
+                # Maybe trim
+                self.file_name.setText(data_source.source_path)
+                self._samples = len(data_source.data)
+                self.file_length.setText(str(self._samples))
+        if self._data_source is not None and self._data_source.data is not None:
+            # There is data so we can update the duration
+            duration = self._sample_rate / self._samples
+            self.file_duration.setText(str(duration))
+
+    @property
+    def plot_widget(self):
+        self._plot_widget
+    
+    @plot_widget.setter
+    def plot_widget(self, widget):
+        self._plot_widget = widget
+    
+    @property
+    def sample_rate(self):
+        return self._sample_rate
+    
+    @sample_rate.setter
+    def sample_rate(self, rate):
+        self._sample_rate = rate
+        self.file_sr_widget.setValue(rate)
+        self.source_update()
+
+    @property
+    def data_type(self):
+        return self._data_type
 
 class MainWindow(QMainWindow):
     """Main window that contains the plot widget as well as the setting"""
@@ -103,7 +169,7 @@ class MainWindow(QMainWindow):
         # The tabs for the plots
         self.plot_widget = PlottingeWidget(self)
 
-        self.settings_widget = PlotSettingsWidget()
+        self.settings_widget = PlotSettingsWidget(self.plot_widget)
 
         layout = QGridLayout()
         layout.addWidget(self.plot_widget, 0, 0, 1, 1)
@@ -116,7 +182,7 @@ class MainWindow(QMainWindow):
         self._w.setLayout(layout)
         self.setCentralWidget(self._w)
 
-        self._data_source = DataSource()
+        self._data_source = DataSource(change_cb=self._refresh_plots)
         # We have not loaded a file yet, so let the file pick the data range
         self._first_file = True
 
@@ -147,6 +213,10 @@ class MainWindow(QMainWindow):
         )
         # Should throw some kind of warning message at this point
         self._data_source.load_file(file_path, self._first_file)
+        self.settings_widget.source_update(self._data_source)
+        self._refresh_plots()
+    
+    def _refresh_plots(self):
         self.plot_widget.refresh_plot(self._data_source)
 
 
@@ -267,15 +337,16 @@ class PlottingeWidget(QWidget):
 class DataSource(object):
     """Data interface class for plotting"""
 
-    def __init__(self, path=None):
+    def __init__(self, path=None, change_cb=None):
         self._data_type = numpy.complex64
-        self._source_path = None  # type: Optional[str]
+        self.source_path = None  # type: Optional[str]
         self.data = numpy.array([], dtype=numpy.complex64)
         self._start = 0  # type: int
         self._end = 0  # type: int
-        self.sample_rate = 8000.0  # type: float
+        self._sample_rate = 8000.0  # type: float
         if path is not None:
             self.load_file(path, True)
+        self.change_cb = change_cb
 
     def _file_range(self, file_len, full_scale=False):
         # type: (int, bool) -> Tuple[int, int]
@@ -337,11 +408,11 @@ class DataSource(object):
             # The data was loaded apply the state
             self._start = new_start
             self._end = new_end
-            self._source_path = path
+            self.source_path = path
 
     def reload_file(self):
         """Reprocess data file"""
-        self.load_file(self._source_path)
+        self.load_file(self.source_path)
 
     @property
     def start(self):
@@ -383,6 +454,15 @@ class DataSource(object):
         time_range *= self.sample_rate
         return time_range
 
+    @property
+    def sample_rate(self):
+        return self._sample_rate
+    
+    @sample_rate.setter
+    def sample_rate(self, rate):
+        self._sample_rate = rate
+        if self.change_cb is not None:
+            self.change_cb()
 
 def main():
     # type: () -> None
