@@ -30,6 +30,7 @@ from PyQt5.QtWidgets import (
 )
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 # These window functions come from `scipy.signal.windows`.  Some are excluded
@@ -42,182 +43,135 @@ _WINDOW_FUNCTIONS = [
 ]
 
 
-class PlotSettingsWidget(QWidget):
-    def __init__(self, plot_widget):
-        QWidget.__init__(self)
+class FileSettingsWidget(QGroupBox):
+    """Widget that holds information and settings for a data source"""
+    def __init__(self, title, change_cb, sample_rate=8000):
+        QGroupBox.__init__(self, title)
 
-        # Cached values for calculating values
+        # This is really just a cached value for computing duration
         self._samples = None
-        self._sample_rate = 8000
-        self._data_type = None
-        self._data_source = None
 
-        file_info = QGroupBox('File Info:')
-        file_layout = QFormLayout()
-        file_info.setLayout(file_layout)
-        self.file_name = QLabel('No File')
-        self.file_length = QLabel('Unknown')
-        self.file_duration = QLabel('Unknown')
-        self.file_data_type = QComboBox()
+        self._name_w = QLabel('No File')
+        self._length_w = QLabel('Unknown')
+        self._duration_w = QLabel('Unknown')
 
+        self._data_type_w = QComboBox()
         # This list could be extended further, or maybe read from numpy
         # custom ones could be created via `numpy.dtype`
-        self.file_data_type.addItems([
+        self._data_type_w.addItems([
             'complex64', 'complex128',
             'float32', 'float64',
             'int8', 'int16', 'int32', 'int64',
             'uint8', 'uint16', 'uint32', 'uint64',
         ])
-        self._data_type = self.file_data_type.currentText()
-        self.file_data_type.currentIndexChanged.connect(self._data_type_changed)
-        self.file_sr_widget = QSpinBox()
-        self.file_sr_widget.setMinimum(0.0)
-        self.file_sr_widget.setMaximum(1000000)  # Need to do something better
-        self.file_sr_widget.setValue(self.sample_rate)
-        self.file_sr_widget.valueChanged.connect(self._sample_rate_changed)
-        file_layout.addRow(QLabel('File Name'), self.file_name)
-        file_layout.addRow(QLabel('File Length'), self.file_length)
-        file_layout.addRow(QLabel('File Duration'), self.file_duration)
-        file_layout.addRow(QLabel('Data Type'), self.file_data_type)
-        file_layout.addRow(QLabel('Sample Rate'), self.file_sr_widget)
+        self._data_type_w.currentIndexChanged.connect(change_cb)
 
-        fft_settings = QGroupBox('FFT:')
-        fft_layout = QFormLayout()
-        fft_size_widget = QComboBox()
-        fft_size_widget.addItems([str(pow(2, exp)) for exp in range(7, 14)])
-        fft_size_widget.currentIndexChanged.connect(self._fft_change)
-        fft_window_widget = QComboBox()
-        fft_window_widget.addItems(_WINDOW_FUNCTIONS)
-        fft_window_widget.currentIndexChanged.connect(self._fft_change)
-        fft_layout.addRow(QLabel('Window Function'), fft_window_widget)
-        fft_layout.addRow(QLabel('Size'), fft_size_widget)
-        fft_settings.setLayout(fft_layout)
+        self._sample_rate_w = QSpinBox()
+        self._sample_rate_w.setMinimum(0.0)
+        self._sample_rate_w.setMaximum(1000000)  # Can there be no max?
+        self._sample_rate_w.setValue(sample_rate)
+        self._sample_rate_w.valueChanged.connect(change_cb)
+        self._sample_rate_w.valueChanged.connect(self._update_duration)
 
-        settings_layout = QVBoxLayout()
-        settings_layout.addWidget(file_info)
-        settings_layout.addWidget(fft_settings)
+        layout = QFormLayout()
+        layout.addRow(QLabel('File Name'), self._name_w)
+        layout.addRow(QLabel('File Length'), self._length_w)
+        layout.addRow(QLabel('File Duration'), self._duration_w)
+        layout.addRow(QLabel('Data Type\n(not_implemented)'), self._data_type_w)
+        layout.addRow(QLabel('Sample Rate'), self._sample_rate_w)
+        self.setLayout(layout)
 
-        self.setLayout(settings_layout)
-    
-    def _sample_rate_changed(self):
-        # This is the callback from the widget changing values
-        # do not use the sample rate property since it updates the widget
-        self._sample_rate = self.file_sr_widget.value()
-        if self._data_source is not None:
-            self._data_source.sample_rate = self._sample_rate
-        self.source_update()
-    
-    def _data_type_changed(self):
-        logger.warning('Data type change not implemented, using complex64')
-    
-    def _fft_change(self):
-        logger.warning('FFT Settings not implemented')
+    def _update_duration(self):
+        duration = 'Unknown'
+        if self._samples is not None:
+            duration = str(self._samples / self.sample_rate)
+        self._duration_w.setText(duration)
 
-    def source_update(self, data_source=None):
-        # type: (Optionial[DataSource]) -> None
-        if data_source is not None:
-            self._data_source = data_source
-            if self._data_source.source_path == None:
-                self.file_name.setText('Unknown')
-                self.file_length.setText('Unknown')
-                self.file_duration.setText('Unknown')
-                return
-            else:
-                # Maybe trim
-                self.file_name.setText(data_source.source_path)
-                self._samples = len(data_source.data)
-                self.file_length.setText(str(self._samples))
-        if self._data_source is not None and self._data_source.data is not None:
-            # There is data so we can update the duration
-            duration = self._sample_rate / self._samples
-            self.file_duration.setText(str(duration))
-
-    @property
-    def plot_widget(self):
-        self._plot_widget
-    
-    @plot_widget.setter
-    def plot_widget(self, widget):
-        self._plot_widget = widget
-    
     @property
     def sample_rate(self):
-        return self._sample_rate
-    
+        return float(self._sample_rate_w.value())
+
     @sample_rate.setter
     def sample_rate(self, rate):
-        self._sample_rate = rate
-        self.file_sr_widget.setValue(rate)
-        self.source_update()
+        self._sample_rate_w.setValue(rate)
+        self._update_duration()
+
+    def _set_file_name(self, value):
+        self._name_w.setText(value)
+
+    def _set_file_len(self, value):
+        self._samples = value
+        self._length_w.setText(str(value))
+        self._update_duration()
+
+    file_name = property(None, _set_file_name)
+    file_length = property(None, _set_file_len)
+
+
+class FFTSettingsWidget(QGroupBox):
+    def __init__(self, title, change_cb):
+        QGroupBox.__init__(self, title)
+        self._size_w = QComboBox()
+        self._size_w.addItems([str(pow(2, exp)) for exp in range(7, 14)])
+        self._size_w.currentIndexChanged.connect(change_cb)
+        self._window_w = QComboBox()
+        self._window_w.addItems(_WINDOW_FUNCTIONS)
+        self._window_w.setCurrentIndex(_WINDOW_FUNCTIONS.index('blackman'))
+        self._window_w.currentIndexChanged.connect(change_cb)
+
+        fft_layout = QFormLayout()
+        fft_layout.addRow(QLabel('Window Function'), self._window_w)
+        fft_layout.addRow(QLabel('Size'), self._size_w)
+        self.setLayout(fft_layout)
 
     @property
-    def data_type(self):
-        return self._data_type
+    def fft_size(self):
+        return int(self._size_w.currentText())
 
-class MainWindow(QMainWindow):
-    """Main window that contains the plot widget as well as the setting"""
+    @property
+    def fft_window(self):
+        return self._window_w.currentText()
 
-    def __init__(self):
-        # type: () -> None
-        super().__init__()
-        self.setWindowTitle('GNURadio Plotting Utility')
-        self.setGeometry(0, 0, 1000, 500)
-        self._setup_actions()
-        self.statusBar()
-        self._add_menu()
 
-        # The tabs for the plots
-        self.plot_widget = PlottingeWidget(self)
+class PlotSettingsWidget(QWidget):
+    def __init__(self, plot_widget):
+        QWidget.__init__(self)
 
-        self.settings_widget = PlotSettingsWidget(self.plot_widget)
+        self._plot_widget = plot_widget
+        self._file_info = FileSettingsWidget('File Info:', self._file_change)
 
-        layout = QGridLayout()
-        layout.addWidget(self.plot_widget, 0, 0, 1, 1)
-        layout.setColumnStretch(0, 1)
-        layout.addWidget(self.settings_widget, 0, 1)
-        layout.setColumnMinimumWidth(0, 600)
-        layout.setColumnMinimumWidth(1, 500)
+        # Construct the fft settings
+        self._fft_settings = FFTSettingsWidget('FFT:', self._fft_change)
 
-        self._w = QWidget()
-        self._w.setLayout(layout)
-        self.setCentralWidget(self._w)
 
-        self._data_source = DataSource(change_cb=self._refresh_plots)
-        # We have not loaded a file yet, so let the file pick the data range
-        self._first_file = True
+        # Add setting groups to settings box
+        settings_layout = QVBoxLayout()
+        settings_layout.addWidget(self._file_info)
+        settings_layout.addWidget(self._fft_settings)
+        self.setLayout(settings_layout)
 
-        self.show()
+        # Reflect the settings down
+        self._file_change()
+        self._fft_change()
 
-    def _setup_actions(self):
-        # type: () -> None
-        self._exit_action = QAction('&Exit', self)
-        self._exit_action.setShortcut('Ctrl+Q')
-        self._exit_action.setStatusTip('Exit application')
-        self._exit_action.triggered.connect(qApp.quit)
+    def _file_change(self):
+        self._plot_widget.sample_rate = self._file_info.sample_rate
+        logger.debug("Sample rate updated: %d", self._file_info.sample_rate)
 
-        self._open_action = QAction('&Open', self)
-        self._open_action.setShortcut('Ctrl+O')
-        self._open_action.setStatusTip('Open data file')
-        self._open_action.triggered.connect(self._open_file)
-
-    def _add_menu(self):
-        # type: () -> None
-        self._menu_bar = self.menuBar()
-        file_menu = self._menu_bar.addMenu('&File')
-        file_menu.addAction(self._exit_action)
-        file_menu.addAction(self._open_action)
-
-    def _open_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, 'Open File', os.getenv('HOME')
+    def _fft_change(self):
+        logger.debug(
+            "FFT Settings updated:\n\tSize: %d\n\tWindow %s",
+            self._fft_settings.fft_size, self._fft_settings.fft_window,
         )
-        # Should throw some kind of warning message at this point
-        self._data_source.load_file(file_path, self._first_file)
-        self.settings_widget.source_update(self._data_source)
-        self._refresh_plots()
-    
-    def _refresh_plots(self):
-        self.plot_widget.refresh_plot(self._data_source)
+        self._plot_widget.set_fft(
+            self._fft_settings.fft_size, self._fft_settings.fft_window
+        )
+
+    def source_update(self):
+        # The source data has been updated, the settings widget needs
+        # to be updated to reflect this change
+        self._file_info.file_name = self._plot_widget.data_source.source_path
+        self._file_info.file_length = len(self._plot_widget.data_source.data)
 
 
 class PlottingeWidget(QWidget):
@@ -225,10 +179,11 @@ class PlottingeWidget(QWidget):
     a tab widget. This also contains the interfaces for controlling
     the data that is being shown"""
 
-    def __init__(self, parent):
-        # type: (QWidget) -> None
+    def __init__(self, parent, data_source=None):
+        # type: (QWidget, Optional[DataSource]) -> None
 
         super().__init__(parent)
+        self._data_source = data_source
         layout = QVBoxLayout(self)
 
         # Initialize tab screen
@@ -254,22 +209,16 @@ class PlottingeWidget(QWidget):
             # the menu item
             plot.getViewBox().setMouseMode(pg.ViewBox.RectMode)
 
-        self.plot_time.getAxis('bottom').setLabel('Time', units='s')
-        self.plot_time.getAxis('bottom').enableAutoSIPrefix(False)
-        # This is not rendering correctly
-        self.plot_time.getAxis('left').setLabel('Amplitude', unit='V')
+        self.plot_time.getAxis('bottom').setLabel('Time (s)')
+        self.plot_time.getAxis('left').setLabel('Amplitude (V)')
 
-        self.plot_psd.getAxis('bottom').setLabel('Frequency', units='Hz')
-        self.plot_psd.getAxis('left').setLabel('Magnitude', units='dB')
+        self.plot_psd.getAxis('bottom').setLabel('Frequency (Hz)')
+        self.plot_psd.getAxis('left').setLabel('Magnitude (dB)')
 
-        self.plot_spec.getAxis('bottom').setLabel('Frequency', units='Hz')
-        # The auto prefix is messed up on this kind of plot, might have
-        # to do with the scaling factors that are applied
-        self.plot_spec.getAxis('bottom').enableAutoSIPrefix(False)
-        self.plot_spec.getAxis('left').setLabel('Time', units='s')
-        self.plot_spec.getAxis('left').enableAutoSIPrefix(False)
+        self.plot_spec.getAxis('bottom').setLabel('Frequency (Hz)')
+        self.plot_spec.getAxis('left').setLabel('Time (s)')
 
-        tabs.addTab(self.plot_time, "Time (iq)")
+        tabs.addTab(self.plot_time, "Time (IQ)")
         tabs.addTab(self.plot_psd, "PSD")
         tabs.addTab(self.plot_spec, "Spectrogram")
 
@@ -277,47 +226,50 @@ class PlottingeWidget(QWidget):
         layout.addWidget(tabs)
         self.setLayout(layout)
 
+        # These should be overwritten by a settings widget
         self.fftsize = 256
+        self.window = signal.windows.blackman(self.fftsize)
+        self._sample_rate = 8000
 
-    def refresh_plot(self, data_source):
+    def refresh_plot(self):
         # type: (DataSource) -> None
         # Need to look up the correct tab here for now just plot timeseries
-        self._refresh_time_plot(data_source)
-        self._refresh_psd_plot(data_source)
-        self._refresh_spec_plot(data_source)
+        if self._data_source is not None and self._data_source.data is not None:
+            self._refresh_time_plot(self._data_source)
+            self._refresh_psd_plot(self._data_source)
+            self._refresh_spec_plot(self._data_source)
 
     def _refresh_time_plot(self, data):
         # type: (DataSource) -> None
-        self.plot_curves['real'].setData(data.time, data.data.real)
-        self.plot_curves['imag'].setData(data.time, data.data.imag)
+        time_range = data.time_range(self._sample_rate)
+        self.plot_curves['real'].setData(time_range, data.data.real)
+        self.plot_curves['imag'].setData(time_range, data.data.imag)
 
     def _refresh_psd_plot(self, data):
-        # Hard code the window function for now
-        window = numpy.blackman(self.fftsize)
         freq_segments, power_d = signal.welch(
             data.data,
-            fs=data.sample_rate,
-            window=window,
+            fs=self.sample_rate,
+            window=self.window,
             nfft=self.fftsize,
             noverlap=self.fftsize/4.0,
             scaling='density',
             return_onesided=False,  # Complex only right now so must be False
         )
         power_d_log = 10.0*numpy.log10(abs(power_d))
+        freq_segments = numpy.fft.fftshift(freq_segments)
+        power_d_log = numpy.fft.fftshift(power_d_log)
         self.plot_curves['psd'].setData(freq_segments, power_d_log)
 
     def _refresh_spec_plot(self, data):
         # Hard code the window function for now
-        window = numpy.blackman(self.fftsize)
         freq_segments, time_segments, spec = signal.spectrogram(
             data.data,
-            fs=data.sample_rate,
-            window=window,
+            fs=self._sample_rate,
+            window=self.window,
             nfft=self.fftsize,
             noverlap=self.fftsize/4.0,
-            # Should we use density? matplotlib was using spectrum scaling
             scaling='spectrum',
-            return_onesided=False,  # Complex only right now so must be False
+            return_onesided=False,
         )
         spec = 10.0*numpy.log10(abs(spec))
 
@@ -333,20 +285,40 @@ class PlottingeWidget(QWidget):
         self.plot_curves['spec'].translate(*pos)
         self.plot_curves['spec'].scale(f_scale, t_scale)
 
+    @property
+    def data_source(self):
+        return self._data_source
+
+    @property
+    def sample_rate(self):
+        return self._sample_rate
+
+    @sample_rate.setter
+    def sample_rate(self, rate):
+        # This is just controlling the plots. This does not control an settings
+        # widget
+        self._sample_rate = rate
+        self.refresh_plot()
+
+    def set_fft(self, size, window):
+        self.fftsize = size
+        # Might be possible to use the signal.windows.get_window function
+        # but it would require some additional logic to normalize it
+        self.window = getattr(signal.windows, window)(size)
+        self.refresh_plot()
+
 
 class DataSource(object):
     """Data interface class for plotting"""
 
-    def __init__(self, path=None, change_cb=None):
+    def __init__(self, path=None):
         self._data_type = numpy.complex64
         self.source_path = None  # type: Optional[str]
-        self.data = numpy.array([], dtype=numpy.complex64)
+        self.data = None
         self._start = 0  # type: int
         self._end = 0  # type: int
-        self._sample_rate = 8000.0  # type: float
         if path is not None:
             self.load_file(path, True)
-        self.change_cb = change_cb
 
     def _file_range(self, file_len, full_scale=False):
         # type: (int, bool) -> Tuple[int, int]
@@ -448,21 +420,75 @@ class DataSource(object):
             self._end = old_end
             raise
 
-    @property
-    def time(self):
-        time_range = numpy.linspace(self.start, self.end, len(self.data), True)
-        time_range *= self.sample_rate
-        return time_range
+    def time_range(self, sample_rate):
+        t_range = numpy.linspace(self.start, self.end, len(self.data), True)
+        t_range *= sample_rate
+        return t_range
 
-    @property
-    def sample_rate(self):
-        return self._sample_rate
-    
-    @sample_rate.setter
-    def sample_rate(self, rate):
-        self._sample_rate = rate
-        if self.change_cb is not None:
-            self.change_cb()
+
+class MainWindow(QMainWindow):
+    """Main window that contains the plot widget as well as the setting"""
+
+    def __init__(self):
+        # type: () -> None
+        super().__init__()
+        self.setWindowTitle('GNURadio Plotting Utility')
+        self.setGeometry(0, 0, 1000, 500)
+        self._setup_actions()
+        self.statusBar()
+        self._add_menu()
+
+
+        self._data_source = DataSource()
+        # We have not loaded a file yet, so let the file pick the data range
+        self._first_file = True
+
+        # The tabs for the plots
+        self.plot_widget = PlottingeWidget(self, self._data_source)
+
+        self.settings_widget = PlotSettingsWidget(self.plot_widget)
+
+        layout = QGridLayout()
+        layout.addWidget(self.plot_widget, 0, 0, 1, 1)
+        layout.setColumnStretch(0, 1)
+        layout.addWidget(self.settings_widget, 0, 1)
+        layout.setColumnMinimumWidth(0, 600)
+        layout.setColumnMinimumWidth(1, 500)
+
+        self._w = QWidget()
+        self._w.setLayout(layout)
+        self.setCentralWidget(self._w)
+
+        self.show()
+
+    def _setup_actions(self):
+        # type: () -> None
+        self._exit_action = QAction('&Exit', self)
+        self._exit_action.setShortcut('Ctrl+Q')
+        self._exit_action.setStatusTip('Exit application')
+        self._exit_action.triggered.connect(qApp.quit)
+
+        self._open_action = QAction('&Open', self)
+        self._open_action.setShortcut('Ctrl+O')
+        self._open_action.setStatusTip('Open data file')
+        self._open_action.triggered.connect(self._open_file)
+
+    def _add_menu(self):
+        # type: () -> None
+        self._menu_bar = self.menuBar()
+        file_menu = self._menu_bar.addMenu('&File')
+        file_menu.addAction(self._exit_action)
+        file_menu.addAction(self._open_action)
+
+    def _open_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, 'Open File', os.getenv('HOME')
+        )
+        # Should throw some kind of warning message at this point
+        self._data_source.load_file(file_path, self._first_file)
+        self.settings_widget.source_update()
+        self.plot_widget.refresh_plot()
+
 
 def main():
     # type: () -> None
