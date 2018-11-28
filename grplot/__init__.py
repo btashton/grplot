@@ -51,6 +51,8 @@ class FileSettingsWidget(QGroupBox):
         # This is really just a cached value for computing duration
         self._samples = None
 
+        self._change_cb = change_cb
+
         self._name_w = QLabel('No File')
         self._length_w = QLabel('Unknown')
         self._duration_w = QLabel('Unknown')
@@ -70,7 +72,7 @@ class FileSettingsWidget(QGroupBox):
         self._sample_rate_w.setMinimum(0.0)
         self._sample_rate_w.setMaximum(1000000)  # Can there be no max?
         self._sample_rate_w.setValue(sample_rate)
-        self._sample_rate_w.valueChanged.connect(change_cb)
+        self._sample_rate_w.valueChanged.connect(self._sample_rate_change)
         self._sample_rate_w.valueChanged.connect(self._update_duration)
 
         layout = QFormLayout()
@@ -80,6 +82,13 @@ class FileSettingsWidget(QGroupBox):
         layout.addRow(QLabel('Data Type\n(not_implemented)'), self._data_type_w)
         layout.addRow(QLabel('Sample Rate'), self._sample_rate_w)
         self.setLayout(layout)
+
+    def _sample_rate_change(self):
+        if float(self._sample_rate_w.value()) > 0:
+            self._change_cb()
+            self._update_duration()
+
+        # else maybe we try and bump this value back up, or show a warning icon
 
     def _update_duration(self):
         duration = 'Unknown'
@@ -93,8 +102,9 @@ class FileSettingsWidget(QGroupBox):
 
     @sample_rate.setter
     def sample_rate(self, rate):
-        self._sample_rate_w.setValue(rate)
-        self._update_duration()
+        if rate > 0:
+            self._sample_rate_w.setValue(rate)
+            self._update_duration()
 
     def _set_file_name(self, value):
         self._name_w.setText(value)
