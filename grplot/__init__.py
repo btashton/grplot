@@ -18,6 +18,7 @@ import logging
 
 import pyqtgraph as pg  # type: ignore
 import numpy  # type: ignore
+import click
 from scipy import signal  # type: ignore
 from PyQt5 import QtGui
 from PyQt5.QtGui import (
@@ -30,7 +31,6 @@ from PyQt5.QtWidgets import (
 )
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 # These window functions come from `scipy.signal.windows`.  Some are excluded
@@ -438,8 +438,8 @@ class DataSource(object):
 class MainWindow(QMainWindow):
     """Main window that contains the plot widget as well as the setting"""
 
-    def __init__(self):
-        # type: () -> None
+    def __init__(self, file=None):
+        # type: (str) -> None
         super().__init__()
         self.setWindowTitle('GNURadio Plotting Utility')
         self.setGeometry(0, 0, 1000, 500)
@@ -448,9 +448,11 @@ class MainWindow(QMainWindow):
         self._add_menu()
 
 
-        self._data_source = DataSource()
+        self._data_source = DataSource(file)
         # We have not loaded a file yet, so let the file pick the data range
         self._first_file = True
+        if file is not None:
+            self._first_file = False
 
         # The tabs for the plots
         self.plot_widget = PlottingeWidget(self, self._data_source)
@@ -499,16 +501,27 @@ class MainWindow(QMainWindow):
         self.plot_widget.refresh_plot()
 
 
-def main():
-    # type: () -> None
+@click.command()
+@click.option('--file', type=click.Path(exists=True))
+@click.option('-v', '--verbose', count=True)
+def main(file, verbose):
+    # type: (str) -> None
     """Main console entry point"""
+
     # setup logger
     logging.basicConfig()
+    if verbose == 0:
+        logger.setLevel(logging.WARNING)
+    elif verbose == 1:
+        logger.setLevel(logging.INFO)
+    else:  # verbose > 1:
+        logger.setLevel(logging.DEBUG)
+
     app = QApplication(sys.argv)
 
     # Need to prevent the window object form being cleaned up while execution
     # loop is running
-    _qt_window = MainWindow()
+    _qt_window = MainWindow(file)
     sys.exit(app.exec_())
 
 

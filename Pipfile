@@ -10,6 +10,7 @@ mypy = "*"
 "pyqt5-stubs" = "*"
 pytest = "*"
 grplot = {editable = true, path = "."}
+click = "*"
 
 [dev-packages]
 grplot = {editable = true, path = "."}
