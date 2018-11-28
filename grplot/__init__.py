@@ -432,7 +432,7 @@ class DataSource(object):
 
     def time_range(self, sample_rate):
         t_range = numpy.linspace(self.start, self.end, len(self.data), True)
-        t_range *= sample_rate
+        t_range /= sample_rate
         return t_range
 
 
