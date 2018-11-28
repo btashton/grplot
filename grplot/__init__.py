@@ -259,6 +259,7 @@ class PlotSettingsWidget(QWidget):
         # Reflect the settings down
         self._file_change()
         self._fft_change()
+        self.source_update()
 
     def _file_change(self):
         self._plot_widget.sample_rate = self._file_info.sample_rate
@@ -276,8 +277,11 @@ class PlotSettingsWidget(QWidget):
     def source_update(self):
         # The source data has been updated, the settings widget needs
         # to be updated to reflect this change
-        self._file_info.file_name = self._plot_widget.data_source.source_path
-        self._file_info.file_length = len(self._plot_widget.data_source.data)
+        ds = self._plot_widget.data_source
+        if ds is not None:
+            self._file_info.file_name = ds.source_path
+            if ds.data is not None:
+                self._file_info.file_length = len(ds.data)
 
 
 class PlottingeWidget(QWidget):
