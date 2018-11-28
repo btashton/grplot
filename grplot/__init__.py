@@ -20,14 +20,15 @@ import pyqtgraph as pg  # type: ignore
 import numpy  # type: ignore
 import click
 from scipy import signal  # type: ignore
+from PyQt5.QtCore import QSize
 from PyQt5 import QtGui
 from PyQt5.QtGui import (
-    QIcon,
+    QIcon, QColor
 )
 from PyQt5.QtWidgets import (
     QMainWindow, QApplication, QLabel, QWidget, QTabWidget, QVBoxLayout,
     QLineEdit, QComboBox, QGridLayout, QFormLayout, qApp, QAction,
-    QFileDialog, QGroupBox, QSpinBox,
+    QFileDialog, QColorDialog, QGroupBox, QSpinBox, QPushButton
 )
 
 logger = logging.getLogger(__name__)
@@ -141,6 +142,89 @@ class FFTSettingsWidget(QGroupBox):
     def fft_window(self):
         return self._window_w.currentText()
 
+class ColorWellWidget(QPushButton):
+    def __init__(self, size=QSize(50,40), color=QColor(0,0,0)):
+        QWidget.__init__(self)
+        self._color = color
+        self._color_picker =  QColorDialog()
+        self.setFixedSize(size)
+        self.setAutoFillBackground(True)
+        self.set_color(color)
+        self.clicked.connect(self._clicked_cb)
+        self._callbacks = []
+
+    def set_color(self, color):
+        palette = self.palette()
+        role = self.backgroundRole()
+        palette.setColor(role, color)
+        self.setPalette(palette)
+        self._color = color
+
+    def _clicked_cb(self, event):
+        self._color_picker.setCurrentColor(self._color)
+        self.set_color(self._color_picker.getColor())
+        for cb in self._callbacks:
+            cb(self._color)
+
+    def connect(self, cb):
+        self._callbacks.append(cb)
+
+
+class PlotStyleWidget(QGroupBox):
+    """Standard style interface for a pyqtplot PlotItem"""
+    def __init__(self, plot):
+        QGroupBox.__init__(self, plot.name())
+
+        self._plot = plot
+        self._symbol_map = {
+            'none': None,
+            'circle': 'o',
+            'square': 's',
+            'triangle': 't',
+            'diamond': 'd',
+            'plus': '+',
+        }
+        # plot.opts['pen'] is sometimes a pen and sometimes a string
+        # make a pen just to be sure
+        plot_pen = pg.mkPen(plot.opts['pen'])
+        plot_symbol = plot.opts['symbol']
+
+        self._color_picker = ColorWellWidget(color=plot_pen.color())
+        self._color_picker.connect(self._color_update)
+
+        self._symbol_picker = QComboBox()
+        self._symbol_picker.addItems(self._symbol_map.keys())
+
+        self._symbol_picker.setCurrentText('none')
+        for k, v in self._symbol_map.items():
+            if plot_symbol == v:
+                self._symbol_picker.setCurrentText(k)
+        self._symbol_picker.currentIndexChanged.connect(self._symbol_update)
+
+        layout = QFormLayout()
+        layout.addRow(QLabel('Curve Color'), self._color_picker)
+        layout.addRow(QLabel('Curve Symbol'), self._symbol_picker)
+        self.setLayout(layout)
+
+    def _color_update(self, color):
+        self._plot.setPen(pg.mkPen(color))
+
+    def _symbol_update(self):
+        symbol = self._symbol_map[self._symbol_picker.currentText()]
+        self._plot.setSymbol(symbol)
+
+
+
+class PlotStyleSettingsWidget(QGroupBox):
+    def __init__(self, title):
+        QGroupBox.__init__(self, title)
+        self._layout = QVBoxLayout()
+        self.setLayout(self._layout)
+
+    def add_plot(self, plot):
+        widget = PlotStyleWidget(plot)
+        self._layout.addWidget(widget)
+
 
 class PlotSettingsWidget(QWidget):
     def __init__(self, plot_widget):
@@ -152,11 +236,24 @@ class PlotSettingsWidget(QWidget):
         # Construct the fft settings
         self._fft_settings = FFTSettingsWidget('FFT:', self._fft_change)
 
+        # Maybe create a few of these for each of the plots and then turn
+        # them on and off
+        self._plot_style_settings = PlotStyleSettingsWidget('Plot Style:')
+        self._plot_style_settings.add_plot(
+            self._plot_widget.plot_curves['real']
+        )
+        self._plot_style_settings.add_plot(
+            self._plot_widget.plot_curves['imag']
+        )
+        self._plot_style_settings.add_plot(
+            self._plot_widget.plot_curves['psd']
+        )
 
         # Add setting groups to settings box
         settings_layout = QVBoxLayout()
         settings_layout.addWidget(self._file_info)
         settings_layout.addWidget(self._fft_settings)
+        settings_layout.addWidget(self._plot_style_settings)
         self.setLayout(settings_layout)
 
         # Reflect the settings down
@@ -208,7 +305,7 @@ class PlottingeWidget(QWidget):
         self.plot_curves = {
             'real': self.plot_time.plot(pen='b', name='I'),
             'imag': self.plot_time.plot(pen='r', name='Q'),
-            'psd': self.plot_psd.plot(pen='b'),
+            'psd': self.plot_psd.plot(pen='b', name='PSD'),
             'spec': spec_image,
         }
 
@@ -501,7 +598,9 @@ class MainWindow(QMainWindow):
         file_path, _ = QFileDialog.getOpenFileName(
             self, 'Open File', os.getenv('HOME')
         )
-        # Should throw some kind of warning message at this point
+        if len(file_path) == 0:
+            # File was not selected
+            return
         self._data_source.load_file(file_path, self._first_file)
         self.settings_widget.source_update()
         self.plot_widget.refresh_plot()
