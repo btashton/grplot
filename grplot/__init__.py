@@ -73,7 +73,6 @@ class FileSettingsWidget(QGroupBox):
         self._sample_rate_w.setMaximum(1000000)  # Can there be no max?
         self._sample_rate_w.setValue(sample_rate)
         self._sample_rate_w.valueChanged.connect(self._sample_rate_change)
-        self._sample_rate_w.valueChanged.connect(self._update_duration)
 
         layout = QFormLayout()
         layout.addRow(QLabel('File Name'), self._name_w)
