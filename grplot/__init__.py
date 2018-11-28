@@ -28,7 +28,7 @@ from PyQt5.QtGui import (
 from PyQt5.QtWidgets import (
     QMainWindow, QApplication, QLabel, QWidget, QTabWidget, QVBoxLayout,
     QLineEdit, QComboBox, QGridLayout, QFormLayout, qApp, QAction,
-    QFileDialog, QColorDialog, QGroupBox, QSpinBox, QPushButton
+    QFileDialog, QColorDialog, QGroupBox, QDoubleSpinBox, QPushButton
 )
 
 logger = logging.getLogger(__name__)
@@ -69,7 +69,7 @@ class FileSettingsWidget(QGroupBox):
         ])
         self._data_type_w.currentIndexChanged.connect(change_cb)
 
-        self._sample_rate_w = QSpinBox()
+        self._sample_rate_w = QDoubleSpinBox()
         self._sample_rate_w.setMinimum(0.0)
         self._sample_rate_w.setMaximum(1000000)  # Can there be no max?
         self._sample_rate_w.setValue(sample_rate)
@@ -263,7 +263,7 @@ class PlotSettingsWidget(QWidget):
 
     def _file_change(self):
         self._plot_widget.sample_rate = self._file_info.sample_rate
-        logger.debug("Sample rate updated: %d", self._file_info.sample_rate)
+        logger.debug("Sample rate updated: %f", self._file_info.sample_rate)
 
     def _fft_change(self):
         logger.debug(
