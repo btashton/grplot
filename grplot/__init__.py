@@ -284,13 +284,19 @@ class PlottingeWidget(QWidget):
 
         freq_segments = numpy.fft.fftshift(freq_segments)
         spec = numpy.fft.fftshift(spec, axes=0)
-        self.plot_curves['spec'].setImage(spec)
 
         f_scale = (freq_segments[-1] - freq_segments[0]) / len(freq_segments)
         t_scale = (time_segments[-1] - time_segments[0]) / len(time_segments)
+        logger.debug("SPEC: fscale: %f, t_scale: %f", f_scale, t_scale)
 
         pos = (freq_segments[0], time_segments[0])
 
+        # Need to reset the transform each time, otherwise the scale/pos
+        # transforms will be applied to the existing transform.  Might be able
+        # to just supply the transform matrix directly instead of resetting
+        # and applying pos and scale in two steps
+        self.plot_curves['spec'].resetTransform()
+        self.plot_curves['spec'].setImage(spec)
         self.plot_curves['spec'].translate(*pos)
         self.plot_curves['spec'].scale(f_scale, t_scale)
 
