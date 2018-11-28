@@ -386,20 +386,27 @@ class PlottingeWidget(QWidget):
         freq_segments = numpy.fft.fftshift(freq_segments)
         spec = numpy.fft.fftshift(spec, axes=0)
 
-        f_scale = (freq_segments[-1] - freq_segments[0]) / len(freq_segments)
-        t_scale = (time_segments[-1] - time_segments[0]) / len(time_segments)
+        f_limits = (freq_segments[0], freq_segments[-1])
+        t_limits = (time_segments[0], time_segments[-1])
+        f_scale = (f_limits[1] - f_limits[0]) / len(freq_segments)
+        t_scale = (t_limits[1] - t_limits[0]) / len(time_segments)
         logger.debug("SPEC: fscale: %f, t_scale: %f", f_scale, t_scale)
 
-        pos = (freq_segments[0], time_segments[0])
+        pos = (f_limits[0], t_limits[0])
 
         # Need to reset the transform each time, otherwise the scale/pos
         # transforms will be applied to the existing transform.  Might be able
         # to just supply the transform matrix directly instead of resetting
         # and applying pos and scale in two steps
-        self.plot_curves['spec'].resetTransform()
-        self.plot_curves['spec'].setImage(spec)
-        self.plot_curves['spec'].translate(*pos)
-        self.plot_curves['spec'].scale(f_scale, t_scale)
+        spec_plot = self.plot_curves['spec']
+        spec_plot.resetTransform()
+        spec_plot.setImage(spec)
+        spec_plot.translate(*pos)
+        spec_plot.scale(f_scale, t_scale)
+        spec_plot.getViewBox().setLimits(
+            xMin=f_limits[0], xMax=f_limits[1],
+            yMin=t_limits[0], yMax=t_limits[1]
+        )
 
     @property
     def data_source(self):
