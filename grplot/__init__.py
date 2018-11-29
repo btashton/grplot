@@ -215,6 +215,32 @@ class PlotStyleWidget(QGroupBox):
         self._plot.setSymbol(symbol)
 
 
+class SpectrogramStyleWidget(QGroupBox):
+    """Standard style interface for a pyqtplot ImageItem"""
+    def __init__(self, plot, title=''):
+        QGroupBox.__init__(self, title)
+
+        self._plot = plot
+
+        self._gradient_map = pg.graphicsItems.GradientEditorItem.Gradients
+        self._gradient = QComboBox()
+        self._gradient.addItems(self._gradient_map.keys())
+
+        self._gradient.setCurrentText('grey')
+        self._gradient_update()
+
+        self._gradient.currentIndexChanged.connect(self._gradient_update)
+
+        layout = QFormLayout()
+        layout.addRow(QLabel('Gradient'), self._gradient)
+        self.setLayout(layout)
+
+    def _gradient_update(self):
+        gradient = self._gradient_map[self._gradient.currentText()]
+        color_map = pg.ColorMap(*zip(*gradient['ticks']))
+        self._plot.setLookupTable(color_map.getLookupTable())
+
+
 class PlotStyleSettingsWidget(QGroupBox):
     def __init__(self, title):
         QGroupBox.__init__(self, title)
@@ -223,6 +249,10 @@ class PlotStyleSettingsWidget(QGroupBox):
 
     def add_plot(self, plot):
         widget = PlotStyleWidget(plot)
+        self._layout.addWidget(widget)
+
+    def add_spectrogram(self, plot, title):
+        widget = SpectrogramStyleWidget(plot, title)
         self._layout.addWidget(widget)
 
 
@@ -247,6 +277,10 @@ class PlotSettingsWidget(QWidget):
         )
         self._plot_style_settings.add_plot(
             self._plot_widget.plot_curves['psd']
+        )
+        self._plot_style_settings.add_spectrogram(
+            self._plot_widget.plot_curves['spec'],
+            'Spectrogram'
         )
 
         # Add setting groups to settings box
