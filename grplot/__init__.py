@@ -338,6 +338,7 @@ class PlottingWidget(QWidget):
                                    ['plot', 'name', 'tab_idx', 'redraw_f'],
                                    defaults=(None,))):
         def redraw(self, data):
+            logger.debug('Redrawing plot: %s', self.name)
             if self.redraw_f is not None:
                 self.redraw_f(self.plot, data)
 
@@ -354,6 +355,7 @@ class PlottingWidget(QWidget):
         layout = QVBoxLayout(self)
         # Initialize tab screen
         self._tabs = QTabWidget()
+        self._tabs.currentChanged.connect(self.refresh_plot)
 
         # Add tabs to widget
         layout.addWidget(self._tabs)
@@ -442,9 +444,11 @@ class PlottingWidget(QWidget):
     def refresh_plot(self):
         # type: () -> None
         # Need to look up the correct tab here for now just plot timeseries
+
         if self._data_source is not None:
             if self._data_source.data is not None:
-                for plot in self._plots:
+                plot = self.get_active_plot()
+                if plot is not None:
                     plot.redraw(self._data_source)
 
     def _refresh_time_plot(self, plot, data):
