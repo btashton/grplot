@@ -15,7 +15,7 @@ except ImportError:
 import sys
 import os
 import logging
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 
 import pyqtgraph as pg  # type: ignore
 import numpy  # type: ignore
@@ -245,16 +245,31 @@ class SpectrogramStyleWidget(QGroupBox):
 class PlotStyleSettingsWidget(QGroupBox):
     def __init__(self, title):
         QGroupBox.__init__(self, title)
+        self._widgets = defaultdict(list)
         self._layout = QVBoxLayout()
         self.setLayout(self._layout)
 
-    def add_plot(self, plot):
+    def add_plot(self, plot, group_idx):
         widget = PlotStyleWidget(plot)
+        widget.hide()
+        self._widgets[group_idx].append(widget)
         self._layout.addWidget(widget)
 
-    def add_spectrogram(self, plot, title):
+    def add_spectrogram(self, plot, group_idx, title):
         widget = SpectrogramStyleWidget(plot, title)
+        widget.hide()
+        self._widgets[group_idx].append(widget)
         self._layout.addWidget(widget)
+
+    def visible_group(self, group):
+        self.hide()
+        for group_idx, group_members in self._widgets.items():
+            for widget in group_members:
+                if group_idx == group:
+                    widget.show()
+                else:
+                    widget.hide()
+        self.show()
 
 
 class PlotSettingsWidget(QWidget):
@@ -262,6 +277,9 @@ class PlotSettingsWidget(QWidget):
         QWidget.__init__(self)
 
         self._plot_widget = plot_widget
+
+        self._fft_tabs = set()
+
         self._file_info = FileSettingsWidget('File Info:', self._file_change)
 
         # Construct the fft settings
@@ -271,26 +289,35 @@ class PlotSettingsWidget(QWidget):
         # them on and off
         self._plot_style_settings = PlotStyleSettingsWidget('Plot Style:')
 
+        plot_container = self._plot_widget.get_plot('time')
         i_curve, q_curve = PlottingWidget.get_iq(
-            self._plot_widget.get_plot('time').plot)
+            plot_container.plot)
 
         if i_curve is not None:
             self._plot_style_settings.add_plot(
-                i_curve
+                i_curve,
+                plot_container.tab_idx
             )
         if q_curve is not None:
             self._plot_style_settings.add_plot(
-                q_curve
+                q_curve,
+                plot_container.tab_idx
             )
+        plot_container = self._plot_widget.get_plot('psd')
+        self._fft_tabs.add(plot_container.tab_idx)
         self._plot_style_settings.add_plot(
-            self._plot_widget.get_plot('psd').plot.plotItem.dataItems[0]
+            plot_container.plot.plotItem.dataItems[0],
+            plot_container.tab_idx
         )
 
-        spec_plot = self._plot_widget.get_plot('spec').plot.plotItem
+        plot_container = self._plot_widget.get_plot('spec')
+        self._fft_tabs.add(plot_container.tab_idx)
+        spec_plot = plot_container.plot.plotItem
         spec_image = next(plot_item for plot_item in spec_plot.items if
-                             isinstance(plot_item, pg.ImageItem))
+                          isinstance(plot_item, pg.ImageItem))
         self._plot_style_settings.add_spectrogram(
             spec_image,
+            plot_container.tab_idx,
             'Spectrogram'
         )
 
@@ -299,12 +326,15 @@ class PlotSettingsWidget(QWidget):
         settings_layout.addWidget(self._file_info)
         settings_layout.addWidget(self._fft_settings)
         settings_layout.addWidget(self._plot_style_settings)
+        settings_layout.addStretch()
         self.setLayout(settings_layout)
 
         # Reflect the settings down
         self._file_change()
         self._fft_change()
         self.source_update()
+        self.context_update()
+        self._plot_widget.tabs.currentChanged.connect(self.context_update)
 
     def _file_change(self):
         self._plot_widget.sample_rate = self._file_info.sample_rate
@@ -327,6 +357,19 @@ class PlotSettingsWidget(QWidget):
             self._file_info.file_name = data_source.source_path
             if data_source.data is not None:
                 self._file_info.file_length = len(data_source.data)
+
+    def context_update(self):
+        # Something about the view has updated and the settings need to be
+        # updated
+        tab_idx = self._plot_widget.get_active_plot().tab_idx
+        self._plot_style_settings.visible_group(None)
+
+        if tab_idx in self._fft_tabs:
+            self._fft_settings.show()
+        else:
+            self._fft_settings.hide()
+
+        self._plot_style_settings.visible_group(tab_idx)
 
 
 class PlottingWidget(QWidget):
@@ -354,11 +397,11 @@ class PlottingWidget(QWidget):
 
         layout = QVBoxLayout(self)
         # Initialize tab screen
-        self._tabs = QTabWidget()
-        self._tabs.currentChanged.connect(self.refresh_plot)
+        self.tabs = QTabWidget()
+        self.tabs.currentChanged.connect(self.refresh_plot)
 
         # Add tabs to widget
-        layout.addWidget(self._tabs)
+        layout.addWidget(self.tabs)
         self.setLayout(layout)
 
         self._plots = []
@@ -423,7 +466,7 @@ class PlottingWidget(QWidget):
         plot_container = PlottingWidget.PlotContainer(
             name=name,
             plot=plot,
-            tab_idx=self._tabs.addTab(plot, title),
+            tab_idx=self.tabs.addTab(plot, title),
             redraw_f=redraw_f
         )
         self._plots.append(plot_container)
@@ -433,9 +476,10 @@ class PlottingWidget(QWidget):
         for plot in self._plots:
             if plot.name == name:
                 return plot
+        return None
 
     def get_active_plot(self):
-        tab_idx = self._tabs.currentIndex()
+        tab_idx = self.tabs.currentIndex()
         for plot in self._plots:
             if plot.tab_idx == tab_idx:
                 return plot
@@ -755,7 +799,11 @@ def main(file, verbose):
     # Need to prevent the window object form being cleaned up while execution
     # loop is running
     _qt_window = MainWindow(file)
-    sys.exit(app.exec_())
+
+    try:
+        sys.exit(app.exec_())
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == '__main__':
