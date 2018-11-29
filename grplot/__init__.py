@@ -15,6 +15,7 @@ except ImportError:
 import sys
 import os
 import logging
+from collections import namedtuple
 
 import pyqtgraph as pg  # type: ignore
 import numpy  # type: ignore
@@ -269,17 +270,27 @@ class PlotSettingsWidget(QWidget):
         # Maybe create a few of these for each of the plots and then turn
         # them on and off
         self._plot_style_settings = PlotStyleSettingsWidget('Plot Style:')
+
+        i_curve, q_curve = PlottingWidget.get_iq(
+            self._plot_widget.get_plot('time').plot)
+
+        if i_curve is not None:
+            self._plot_style_settings.add_plot(
+                i_curve
+            )
+        if q_curve is not None:
+            self._plot_style_settings.add_plot(
+                q_curve
+            )
         self._plot_style_settings.add_plot(
-            self._plot_widget.plot_curves['real']
+            self._plot_widget.get_plot('psd').plot.plotItem.dataItems[0]
         )
-        self._plot_style_settings.add_plot(
-            self._plot_widget.plot_curves['imag']
-        )
-        self._plot_style_settings.add_plot(
-            self._plot_widget.plot_curves['psd']
-        )
+
+        spec_plot = self._plot_widget.get_plot('spec').plot.plotItem
+        spec_image = next(plot_item for plot_item in spec_plot.items if
+                             isinstance(plot_item, pg.ImageItem))
         self._plot_style_settings.add_spectrogram(
-            self._plot_widget.plot_curves['spec'],
+            spec_image,
             'Spectrogram'
         )
 
@@ -318,79 +329,136 @@ class PlotSettingsWidget(QWidget):
                 self._file_info.file_length = len(data_source.data)
 
 
-class PlottingeWidget(QWidget):
+class PlottingWidget(QWidget):
     """Container widget class that stores the different plots under
     a tab widget. This also contains the interfaces for controlling
     the data that is being shown"""
+
+    class PlotContainer(namedtuple('PlotContainer',
+                                   ['plot', 'name', 'tab_idx', 'redraw_f'],
+                                   defaults=(None,))):
+        def redraw(self, data):
+            if self.redraw_f is not None:
+                self.redraw_f(self.plot, data)
 
     def __init__(self, parent, data_source=None):
         # type: (QWidget, Optional[DataSource]) -> None
 
         super().__init__(parent)
         self._data_source = data_source
-        layout = QVBoxLayout(self)
-
-        # Initialize tab screen
-        tabs = QTabWidget()
-
-        self.plot_time = pg.PlotWidget()
-        self.plot_time.addLegend()
-        self.plot_psd = pg.PlotWidget()
-        self.plot_spec = pg.PlotWidget()
-        spec_image = pg.ImageItem()
-        self.plot_spec.addItem(spec_image)
-
-        self.plot_curves = {
-            'real': self.plot_time.plot(pen='b', name='I'),
-            'imag': self.plot_time.plot(pen='r', name='Q'),
-            'psd': self.plot_psd.plot(pen='b', name='PSD'),
-            'spec': spec_image,
-        }
-
-        for _, plot in self.plot_curves.items():
-            # Default to using the mouse for selecting region instead of pan
-            # this can be change by the user by right clicking and selecting
-            # the menu item
-            plot.getViewBox().setMouseMode(pg.ViewBox.RectMode)
-
-        self.plot_time.getAxis('bottom').setLabel('Time (s)')
-        self.plot_time.getAxis('left').setLabel('Amplitude (V)')
-
-        self.plot_psd.getAxis('bottom').setLabel('Frequency (Hz)')
-        self.plot_psd.getAxis('left').setLabel('Magnitude (dB)')
-
-        self.plot_spec.getAxis('bottom').setLabel('Frequency (Hz)')
-        self.plot_spec.getAxis('left').setLabel('Time (s)')
-
-        tabs.addTab(self.plot_time, "Time (IQ)")
-        tabs.addTab(self.plot_psd, "PSD")
-        tabs.addTab(self.plot_spec, "Spectrogram")
-
-        # Add tabs to widget
-        layout.addWidget(tabs)
-        self.setLayout(layout)
-
         # These should be overwritten by a settings widget
         self.fftsize = 256
         self.window = signal.windows.blackman(self.fftsize)
         self._sample_rate = 8000
+
+        layout = QVBoxLayout(self)
+        # Initialize tab screen
+        self._tabs = QTabWidget()
+
+        # Add tabs to widget
+        layout.addWidget(self._tabs)
+        self.setLayout(layout)
+
+        self._plots = []
+
+        plot_time = self._add_plot(
+            plot=pg.PlotWidget(),
+            name='time',
+            title='Time (IQ)',
+            redraw_f=self._refresh_time_plot
+        )
+        plot_time.plot.addLegend()
+        plot_time.plot.plot(pen='b', name='I')
+        plot_time.plot.plot(pen='r', name='Q')
+        plot_time.plot.getAxis('bottom').setLabel('Time (s)')
+        plot_time.plot.getAxis('left').setLabel('Amplitude (V)')
+
+        plot_psd = self._add_plot(
+            plot=pg.PlotWidget(),
+            name='psd',
+            title='PSD',
+            redraw_f=self._refresh_psd_plot
+        )
+        plot_psd.plot.plot(pen='b', name='PSD')
+        plot_psd.plot.getAxis('bottom').setLabel('Frequency (Hz)')
+        plot_psd.plot.getAxis('left').setLabel('Magnitude (dB)')
+
+        plot_spec = self._add_plot(
+            plot=pg.PlotWidget(),
+            name='spec',
+            title='Spectrogram',
+            redraw_f=self._refresh_spec_plot
+        )
+        plot_spec.plot.addItem(pg.ImageItem())
+        plot_spec.plot.getAxis('bottom').setLabel('Frequency (Hz)')
+        plot_spec.plot.getAxis('left').setLabel('Time (s)')
+
+        for container in self._plots:
+            # Default to using the mouse for selecting region instead of pan
+            # this can be change by the user by right clicking and selecting
+            # the menu item
+            container.plot.getViewBox().setMouseMode(pg.ViewBox.RectMode)
+
+
+    @staticmethod
+    def get_iq(plot):
+        # This block here should really be part of the underlying plot class
+        i_curve = None
+        q_curve = None
+        for data_item in plot.plotItem.dataItems:
+            if data_item.name() == 'I':
+                i_curve = data_item
+            elif data_item.name() == 'Q':
+                q_curve = data_item
+            if i_curve is not None and q_curve is not None:
+                break
+        return (i_curve, q_curve)
+
+    def _add_plot(self, plot, name, title, redraw_f):
+        if name in self._plots:
+            raise ValueError("Plot with name {} already exists".format(name))
+
+        plot_container = PlottingWidget.PlotContainer(
+            name=name,
+            plot=plot,
+            tab_idx=self._tabs.addTab(plot, title),
+            redraw_f=redraw_f
+        )
+        self._plots.append(plot_container)
+        return plot_container
+
+    def get_plot(self, name):
+        for plot in self._plots:
+            if plot.name == name:
+                return plot
+
+    def get_active_plot(self):
+        tab_idx = self._tabs.currentIndex()
+        for plot in self._plots:
+            if plot.tab_idx == tab_idx:
+                return plot
+        return None
 
     def refresh_plot(self):
         # type: () -> None
         # Need to look up the correct tab here for now just plot timeseries
         if self._data_source is not None:
             if self._data_source.data is not None:
-                self._refresh_time_plot(self._data_source)
-                self._refresh_psd_plot(self._data_source)
-                self._refresh_spec_plot(self._data_source)
+                for plot in self._plots:
+                    plot.redraw(self._data_source)
 
-    def _refresh_time_plot(self, data):
+    def _refresh_time_plot(self, plot, data):
         # type: (DataSource) -> None
         time_range = data.time_range(self._sample_rate)
-        self.plot_curves['real'].setData(time_range, data.data.real)
-        self.plot_curves['imag'].setData(time_range, data.data.imag)
 
-    def _refresh_psd_plot(self, data):
+        # May want to subclass PlotItem to provide access to i and q
+        i_curve, q_curve = self.get_iq(plot)
+        if i_curve is not None:
+            i_curve.setData(time_range, data.data.real)
+        if q_curve is not None:
+            q_curve.setData(time_range, data.data.imag)
+
+    def _refresh_psd_plot(self, plot, data):
         freq_segments, power_d = signal.welch(
             data.data,
             fs=self.sample_rate,
@@ -403,9 +471,14 @@ class PlottingeWidget(QWidget):
         power_d_log = 10.0*numpy.log10(abs(power_d))
         freq_segments = numpy.fft.fftshift(freq_segments)
         power_d_log = numpy.fft.fftshift(power_d_log)
-        self.plot_curves['psd'].setData(freq_segments, power_d_log)
+        try:
+            data_item = plot.plotItem.dataItems[0]
+        except IndexError:
+            logger.exception('PSD plot could not be found!')
+            raise
+        data_item.setData(freq_segments, power_d_log)
 
-    def _refresh_spec_plot(self, data):
+    def _refresh_spec_plot(self, plot, data):
         # Hard code the window function for now
         freq_segments, time_segments, spec = signal.spectrogram(
             data.data,
@@ -433,7 +506,13 @@ class PlottingeWidget(QWidget):
         # transforms will be applied to the existing transform.  Might be able
         # to just supply the transform matrix directly instead of resetting
         # and applying pos and scale in two steps
-        spec_plot = self.plot_curves['spec']
+        try:
+            spec_plot = next(plot_item for plot_item in plot.plotItem.items if
+                             isinstance(plot_item, pg.ImageItem))
+        except StopIteration:
+            logger.exception('Spectrogram plot could not be found!')
+            raise
+
         spec_plot.resetTransform()
         spec_plot.setImage(spec)
         spec_plot.translate(*pos)
@@ -603,7 +682,7 @@ class MainWindow(QMainWindow):
             self._first_file = False
 
         # The tabs for the plots
-        self.plot_widget = PlottingeWidget(self, self._data_source)
+        self.plot_widget = PlottingWidget(self, self._data_source)
 
         self.settings_widget = PlotSettingsWidget(self.plot_widget)
 
