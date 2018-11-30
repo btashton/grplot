@@ -23,8 +23,9 @@ import click
 from scipy import signal  # type: ignore
 from PyQt5.QtCore import QSize
 from PyQt5 import QtGui
+from PyQt5.QtGui import QStyle  # pylint: disable=E0611
 from PyQt5.QtGui import (
-    QIcon, QColor
+    QIcon, QColor,
 )
 from PyQt5.QtWidgets import (
     QMainWindow, QApplication, QLabel, QWidget, QTabWidget, QVBoxLayout,
@@ -122,6 +123,13 @@ class FileSettingsWidget(QGroupBox):
 class FFTSettingsWidget(QGroupBox):
     def __init__(self, title, change_cb):
         QGroupBox.__init__(self, title)
+        self._warning_w = QLabel('Setting Error!')
+        style = QApplication.instance().style()
+        w_icon = style.standardIcon(QStyle.SP_MessageBoxWarning)
+        w_icon_size = w_icon.actualSize(QSize(32, 32))
+        self._warning_w.setPixmap(w_icon.pixmap(w_icon_size))
+        self._warning_w.hide()
+
         self._size_w = QComboBox()
         self._size_w.addItems([str(pow(2, exp)) for exp in range(7, 14)])
         self._size_w.currentIndexChanged.connect(change_cb)
@@ -131,6 +139,7 @@ class FFTSettingsWidget(QGroupBox):
         self._window_w.currentIndexChanged.connect(change_cb)
 
         fft_layout = QFormLayout()
+        fft_layout.addRow(self._warning_w, None)
         fft_layout.addRow(QLabel('Window Function'), self._window_w)
         fft_layout.addRow(QLabel('Size'), self._size_w)
         self.setLayout(fft_layout)
@@ -142,6 +151,12 @@ class FFTSettingsWidget(QGroupBox):
     @property
     def fft_window(self):
         return self._window_w.currentText()
+
+    def show_warning(self, state):
+        if state:
+            self._warning_w.show()
+        else:
+            self._warning_w.hide()
 
 
 class ColorWellWidget(QPushButton):
@@ -345,9 +360,15 @@ class PlotSettingsWidget(QWidget):
             "FFT Settings updated:\n\tSize: %d\n\tWindow %s",
             self._fft_settings.fft_size, self._fft_settings.fft_window,
         )
-        self._plot_widget.set_fft(
-            self._fft_settings.fft_size, self._fft_settings.fft_window
-        )
+        try:
+            self._plot_widget.set_fft(
+                self._fft_settings.fft_size, self._fft_settings.fft_window
+            )
+            self._fft_settings.show_warning(False)
+        except ValueError as err:
+            self._fft_settings.show_warning(True)
+            self._fft_settings.setToolTip(str(err))
+            logger.warning('Failed to apply FFT settings "%s"', str(err))
 
     def source_update(self):
         # The source data has been updated, the settings widget needs
@@ -586,11 +607,24 @@ class PlottingWidget(QWidget):
         self.refresh_plot()
 
     def set_fft(self, size, window):
+        old_fftsize = self.fftsize
+        old_window = self.window
         self.fftsize = size
         # Might be possible to use the signal.windows.get_window function
         # but it would require some additional logic to normalize it
         self.window = getattr(signal.windows, window)(size)
-        self.refresh_plot()
+        try:
+            self.refresh_plot()
+        except ValueError as err:
+            self.fftsize = old_fftsize
+            self.window = old_window
+            try:
+                self.refresh_plot()
+            except Exception:  # pylint: disable=W0703
+                logger.exception("Unwinding fft settings failed!")
+            raise err
+
+
 
 
 class DataSource(object):
