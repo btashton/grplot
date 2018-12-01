@@ -45,16 +45,31 @@ _WINDOW_FUNCTIONS = [
     'barthann',
 ]
 
+_DATA_TYPES = [
+    'complex64',
+    'float32', 'float64',
+    'int8', 'int16', 'int32', 'int64',
+    'uint8', 'uint16', 'uint32', 'uint64',
+]
+
 
 class FileSettingsWidget(QGroupBox):
     """Widget that holds information and settings for a data source"""
-    def __init__(self, title, change_cb, sample_rate=8000):
+    def __init__(self, title, change_cb, sample_rate=8000,
+                 data_type='complex64'):
         QGroupBox.__init__(self, title)
 
         # This is really just a cached value for computing duration
         self._samples = None
 
         self._change_cb = change_cb
+
+        self._warning_w = QLabel('Setting Error!')
+        style = QApplication.instance().style()
+        w_icon = style.standardIcon(QStyle.SP_MessageBoxWarning)
+        w_icon_size = w_icon.actualSize(QSize(32, 32))
+        self._warning_w.setPixmap(w_icon.pixmap(w_icon_size))
+        self._warning_w.hide()
 
         self._name_w = QLabel('No File')
         self._length_w = QLabel('Unknown')
@@ -63,13 +78,9 @@ class FileSettingsWidget(QGroupBox):
         self._data_type_w = QComboBox()
         # This list could be extended further, or maybe read from numpy
         # custom ones could be created via `numpy.dtype`
-        self._data_type_w.addItems([
-            'complex64', 'complex128',
-            'float32', 'float64',
-            'int8', 'int16', 'int32', 'int64',
-            'uint8', 'uint16', 'uint32', 'uint64',
-        ])
-        self._data_type_w.currentIndexChanged.connect(change_cb)
+        self._data_type_w.addItems(_DATA_TYPES)
+        self._data_type_w.setCurrentText(data_type)
+        self._data_type_w.currentIndexChanged.connect(self._data_type_change)
 
         self._sample_rate_w = QDoubleSpinBox()
         self._sample_rate_w.setMinimum(0.0)
@@ -78,6 +89,7 @@ class FileSettingsWidget(QGroupBox):
         self._sample_rate_w.valueChanged.connect(self._sample_rate_change)
 
         layout = QFormLayout()
+        layout.addRow(self._warning_w, None)
         layout.addRow(QLabel('File Name'), self._name_w)
         layout.addRow(QLabel('File Length'), self._length_w)
         layout.addRow(QLabel('File Duration'), self._duration_w)
@@ -87,16 +99,30 @@ class FileSettingsWidget(QGroupBox):
 
     def _sample_rate_change(self):
         if float(self._sample_rate_w.value()) > 0:
-            self._change_cb()
+            self._change_cb(sample_rate=self.sample_rate)
             self._update_duration()
 
         # else maybe we try and bump this value back up, or show a warning icon
+
+    def _data_type_change(self):
+        self._change_cb(data_type=self.data_type)
 
     def _update_duration(self):
         duration = 'Unknown'
         if self._samples is not None:
             duration = str(self._samples / self.sample_rate)
         self._duration_w.setText(duration)
+
+    def show_warning(self, state, err=''):
+        if state:
+            self.setToolTip(err)
+            self._warning_w.show()
+        else:
+            self._warning_w.hide()
+
+    @property
+    def data_type(self):
+        return self._data_type_w.currentText()
 
     @property
     def sample_rate(self):
@@ -152,8 +178,9 @@ class FFTSettingsWidget(QGroupBox):
     def fft_window(self):
         return self._window_w.currentText()
 
-    def show_warning(self, state):
+    def show_warning(self, state, err=''):
         if state:
+            self.setToolTip(err)
             self._warning_w.show()
         else:
             self._warning_w.hide()
@@ -294,8 +321,9 @@ class PlotSettingsWidget(QWidget):
         self._plot_widget = plot_widget
 
         self._fft_tabs = set()
-
-        self._file_info = FileSettingsWidget('File Info:', self._file_change)
+        data_type = self._plot_widget.data_source.data_type.__name__
+        self._file_info = FileSettingsWidget('File Info:', self._file_change,
+                                             data_type=data_type)
 
         # Construct the fft settings
         self._fft_settings = FFTSettingsWidget('FFT:', self._fft_change)
@@ -351,9 +379,24 @@ class PlotSettingsWidget(QWidget):
         self.context_update()
         self._plot_widget.tabs.currentChanged.connect(self.context_update)
 
-    def _file_change(self):
-        self._plot_widget.sample_rate = self._file_info.sample_rate
-        logger.debug("Sample rate updated: %f", self._file_info.sample_rate)
+    def _file_change(self, data_type=None, sample_rate=None):
+        self._file_info.show_warning(False)
+        if data_type is not None:
+            self._plot_widget.data_source.data_type = data_type
+            try:
+                self._plot_widget.refresh_plot()
+                logger.debug('Data type updated: %s', data_type)
+            except Exception as err:  # pylint: disable=W0703
+                logger.warning('Failed to apply data type "%s"', str(err))
+                self._file_info.show_warning(True, str(err))
+
+        if sample_rate is not None:
+            try:
+                self._plot_widget.sample_rate = sample_rate
+                logger.debug('Sample rate updated: %f', sample_rate)
+            except Exception as err:  # pylint: disable=W0703
+                logger.warning('Failed to update sample rate %s', str(err))
+                self._file_info.show_warning(True, str(err))
 
     def _fft_change(self):
         logger.debug(
@@ -366,8 +409,7 @@ class PlotSettingsWidget(QWidget):
             )
             self._fft_settings.show_warning(False)
         except ValueError as err:
-            self._fft_settings.show_warning(True)
-            self._fft_settings.setToolTip(str(err))
+            self._fft_settings.show_warning(True, str(err))
             logger.warning('Failed to apply FFT settings "%s"', str(err))
 
     def source_update(self):
@@ -403,7 +445,12 @@ class PlottingWidget(QWidget):
         def redraw(self, data):
             logger.debug('Redrawing plot: %s', self.name)
             if self.redraw_f is not None:
-                self.redraw_f(self.plot, data)
+                try:
+                    self.redraw_f(self.plot, data)
+                except Exception:
+                    logger.exception("A critical error prevented plot update"
+                                     " check sample rate and data type.")
+                    raise
 
     def __init__(self, parent, data_source=None):
         # type: (QWidget, Optional[DataSource]) -> None
@@ -463,7 +510,6 @@ class PlottingWidget(QWidget):
             # this can be change by the user by right clicking and selecting
             # the menu item
             container.plot.getViewBox().setMouseMode(pg.ViewBox.RectMode)
-
 
     @staticmethod
     def get_iq(plot):
@@ -624,13 +670,12 @@ class PlottingWidget(QWidget):
             raise err
 
 
-
-
 class DataSource(object):
     """Data interface class for plotting"""
-
-    def __init__(self, path=None):
-        self._data_type = numpy.complex64
+    def __init__(self, path=None, data_type='complex64'):
+        if isinstance(data_type, str):
+            data_type = getattr(numpy, data_type)
+        self._data_type = data_type
         self.source_path = None  # type: Optional[str]
         self.data = None
         self._start = 0  # type: int
@@ -702,7 +747,17 @@ class DataSource(object):
 
     def reload_file(self):
         """Reprocess data file"""
-        self.load_file(self.source_path)
+        if self.source_path is not None:
+            self.load_file(self.source_path)
+
+    @property
+    def data_type(self):
+        return self._data_type
+
+    @data_type.setter
+    def data_type(self, type_str):
+        self._data_type = type_str
+        self.reload_file()
 
     @property
     def start(self):
@@ -747,7 +802,7 @@ class DataSource(object):
 class MainWindow(QMainWindow):
     """Main window that contains the plot widget as well as the setting"""
 
-    def __init__(self, file=None):
+    def __init__(self, file=None, data_type=None):
         # type: (str) -> None
         super().__init__()
         self.setWindowTitle('GNURadio Plotting Utility')
@@ -755,8 +810,7 @@ class MainWindow(QMainWindow):
         self._setup_actions()
         self.statusBar()
         self._add_menu()
-
-        self._data_source = DataSource(file)
+        self._data_source = DataSource(file, data_type)
         # We have not loaded a file yet, so let the file pick the data range
         self._first_file = True
         if file is not None:
@@ -811,10 +865,16 @@ class MainWindow(QMainWindow):
         self.plot_widget.refresh_plot()
 
 
+def _exception_handler(*_):
+    logger.exception("UI Triggered exception :(")
+
+
 @click.command()
 @click.option('--file', type=click.Path(exists=True))
+@click.option('--data_type', type=click.Choice(_DATA_TYPES),
+              default='complex64')
 @click.option('-v', '--verbose', count=True)
-def main(file, verbose):
+def main(file, data_type, verbose):
     # type: (str) -> None
     """Main console entry point"""
 
@@ -827,11 +887,16 @@ def main(file, verbose):
     else:  # verbose > 1:
         logger.setLevel(logging.DEBUG)
 
+    # Ignoring these errors cause very unexpected plot data that is a mess
+    # to detect properly.  Address these early and often.
+    numpy.seterr(divide='raise')
+    pg.exceptionHandling.register(_exception_handler)
+
     app = QApplication(sys.argv)
 
     # Need to prevent the window object form being cleaned up while execution
     # loop is running
-    _qt_window = MainWindow(file)
+    _qt_window = MainWindow(file, data_type)
 
     try:
         sys.exit(app.exec_())
