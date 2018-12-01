@@ -399,8 +399,7 @@ class PlottingWidget(QWidget):
     the data that is being shown"""
 
     class PlotContainer(namedtuple('PlotContainer',
-                                   ['plot', 'name', 'tab_idx', 'redraw_f'],
-                                   defaults=(None,))):
+                                   ['plot', 'name', 'tab_idx', 'redraw_f'])):
         def redraw(self, data):
             logger.debug('Redrawing plot: %s', self.name)
             if self.redraw_f is not None:
