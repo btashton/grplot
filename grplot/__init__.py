@@ -890,7 +890,7 @@ def main(file, data_type, verbose):
     # Ignoring these errors cause very unexpected plot data that is a mess
     # to detect properly.  Address these early and often.
     numpy.seterr(divide='raise')
-    pg.exceptionHandling.register(_exception_handler)
+    #pg.exceptionHandling.register(_exception_handler)
 
     app = QApplication(sys.argv)
 
